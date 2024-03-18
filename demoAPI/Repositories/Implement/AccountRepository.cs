@@ -1,5 +1,6 @@
 ﻿using demoAPI.Controllers;
 using demoAPI.Data;
+using demoAPI.Helpers;
 using demoAPI.Models;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.IdentityModel.Tokens;
@@ -14,50 +15,67 @@ namespace demoAPI.Repositories.Implement
         private readonly UserManager<ApplicationUser> userManager;
         private readonly SignInManager<ApplicationUser> signInManager;
         private readonly IConfiguration configuration;
+        private readonly RoleManager<IdentityRole> roleManager;
 
-        public AccountRepository(UserManager<ApplicationUser> userManager , 
-             SignInManager<ApplicationUser> signInManager, IConfiguration configuration
-            ) 
+        public AccountRepository(UserManager<ApplicationUser> userManager,
+                                 SignInManager<ApplicationUser> signInManager,
+                                 IConfiguration configuration,
+                                 RoleManager<IdentityRole> roleManager
+            )
         {
             this.userManager = userManager;
             this.signInManager = signInManager;
             this.configuration = configuration;
+            this.roleManager = roleManager;
+
         }
 
         public async Task<string> SignInAsync(SignInModel model)
         {
-            var result = await signInManager.PasswordSignInAsync
-                (model.Email, model.Passsword, false, false);
-            if (!result.Succeeded)
+            var user = await userManager.FindByEmailAsync(model.Email);
+            var checkPassword = await userManager.CheckPasswordAsync(user, model.Passsword);
+
+            if (user == null || !checkPassword)
             {
                 return string.Empty;
             }
-       
-           
-
-            var authClaims = new List<Claim>
+            else
             {
-                new Claim(ClaimTypes.Email, model.Email),
-                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
-            };
+                var authClaims = new List<Claim>
+                {
+                    new Claim(ClaimTypes.Email, model.Email),
+                    new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+                };
 
-            var authenkey = new SymmetricSecurityKey(
-                Encoding.UTF8.GetBytes(configuration["JWT:Secret"]));
+                var userRole = await userManager.GetRolesAsync(user);
+                foreach (var role in userRole)
+                {
+                    authClaims.Add(new Claim(ClaimTypes.Role, role.ToString()));
+                }
 
-            var token = new JwtSecurityToken(
-                issuer: configuration["JWT:ValidIssuer"],
-                audience: configuration["JWT:ValiAudience"],
-                expires: DateTime.Now.AddMinutes(20),
-                claims: authClaims,
-                signingCredentials: new SigningCredentials(authenkey,
-                SecurityAlgorithms.HmacSha256)
-                );
+                var issuer = configuration["JWT:ValidIssuer"];
+                var audience = configuration["JWT:ValidAudience"];
+                var expires = DateTime.Now.AddMinutes(20);
+                var authenkey = new SymmetricSecurityKey(
+                    Encoding.UTF8.GetBytes(configuration["JWT:Secret"]));
 
-            return new JwtSecurityTokenHandler().WriteToken(token);
+                var token = new JwtSecurityToken(
+                    issuer: issuer,
+                    audience: audience,
+                    expires: expires,
+                    claims: authClaims,
+                    signingCredentials: new SigningCredentials(authenkey, SecurityAlgorithms.HmacSha256)
+                    );
+
+                return new JwtSecurityTokenHandler().WriteToken(token);
+            }
+
+
         }
 
         public async Task<IdentityResult> SignUpAsync(SignUpModel model)
         {
+
             var user = new ApplicationUser
             {
                 FirstName = model.FirstName,
@@ -66,8 +84,21 @@ namespace demoAPI.Repositories.Implement
                 UserName = model.Email
             };
 
-            return await userManager.CreateAsync(user, model.Passsword);
+            var Result = await userManager.CreateAsync(user, model.Passsword);
 
+            if (Result.Succeeded)
+            {
+                /* khởi tạo role trước khi thêm role vào user ( tránh thêm dữ liệu ) */
+                if (!await roleManager.RoleExistsAsync(AppRole.Customer))
+                {
+                    await roleManager.CreateAsync(new IdentityRole(AppRole.Customer));
+                }
+
+                await userManager.AddToRoleAsync(user, AppRole.Customer);
+
+            }
+
+            return Result;
         }
     }
 }

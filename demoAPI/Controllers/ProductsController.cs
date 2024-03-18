@@ -17,6 +17,7 @@ namespace demoAPI.Controllers
             _bookRepo = repo;
         }
         [HttpGet]
+        [Authorize]
         public async Task<IActionResult> GetAllBooks()
         {
             try
@@ -35,7 +36,6 @@ namespace demoAPI.Controllers
             return book == null ? NotFound() : Ok(book);
         }
         [HttpPost]
-        [Authorize]
         public async Task<IActionResult> AddNewBook(BookModel model)
         {
             try
@@ -53,7 +53,6 @@ namespace demoAPI.Controllers
 
         }
         [HttpPut("{Id}")]
-        [Authorize]
 
         public async Task<IActionResult> UpdateBook(int Id , [FromBody] BookModel model)
         {
@@ -73,7 +72,7 @@ namespace demoAPI.Controllers
         }
 
         [HttpDelete("{Id}")]
-        [Authorize]
+
 
         public async Task<IActionResult> DeleteBook([FromBody] int Id)
         {
